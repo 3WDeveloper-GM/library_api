@@ -1,0 +1,68 @@
+	//Deleting the old records for this book
+
+	query = `
+			DELETE FROM book_author_link bal
+			WHERE bal.book_id = $1
+	`
+
+	args = []interface{}{
+		entry.Book.Hash,
+	}
+
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return errors.New(err.Error() + "not passed 2")
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return errors.New(err.Error() + "not passed 2")
+	}
+
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+
+	//Inserting the new records in the book_author_link table
+
+	query = `
+		WITH new_data AS (
+				SELECT book_id, author_id
+				FROM UNNEST($1::TEXT[]) AS book_id,
+					UNNEST($2::TEXT[]) AS author_id
+		), inserted AS (
+				INSERT INTO book_author_link (book_id, author_id)
+				SELECT book_id, author_id FROM new_data
+		)
+		SELECT authors.name, authors.author_id FROM authors
+		WHERE 
+`
+
+	args = []interface{}{pq.Array([]string{*entry.Book.Hash}), pq.Array(entry.Author.Hash)}
+
+	err = tx.QueryRowContext(ctx, query, args...).Scan(
+		pq.Array(&read.List.Name),
+		pq.Array(&read.List.Identifier),
+	)
+
+	if err != nil {
+		return errors.New(err.Error() + "not passed 3")
+	}
+
+	//updating the authors table
+	query = `
+		UPDATE authors AS a
+		SET books_authored = subquery.books_authored_count
+		FROM (
+			SELECT author_id, COUNT(*) AS books_authored_count
+			FROM book_author_link
+			WHERE author_id = ANY($1::TEXT[])
+			GROUP BY author_id
+		) AS subquery
+		WHERE a.author_id = subquery.author_id;
+		RETURNING books_authored
+	`
+
+	return tx.QueryRowContext(ctx, query, pq.Array(entry.Author.Hash)).Scan(
+		pq.Array(&read.List.Books_authored),
+	)
