@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS book_author_link;
+DROP TABLE IF EXISTS books;
+DROP TABLE IF EXISTS authors;
